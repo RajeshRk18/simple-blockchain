@@ -1,0 +1,12 @@
+[package]
+name = "more-rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hex-literal = "0.3.4"
+rand = "0.8.5"
+sha2 = "0.10.6"
+sha256 = "1.1.1"
