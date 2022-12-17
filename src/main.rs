@@ -47,7 +47,6 @@ fn main() {
 
     fn add_block(block: Block, blockchain: &mut BlockChain) -> &mut BlockChain {
         blockchain.blocks.push(block);
-
         blockchain
     }
 
