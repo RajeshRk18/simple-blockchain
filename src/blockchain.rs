@@ -2,6 +2,7 @@ use crate::block::*;
 use crate::transaction::*;
 
 use serde::{Serialize, Deserialize};
+use sha2::Digest;
 use sha256::digest;
 use rand::{Rng, thread_rng};
 
@@ -44,6 +45,7 @@ impl BlockChain {
                 block.Block_header.coinbase_txn.validator = format!("0x{}", thread_rng().gen::<u32>().to_string());
                 block.Block_header.coinbase_txn.message = format!("Mined by {}", block.Block_header.coinbase_txn.validator.clone());
 
+                block.Block_header.current_hash = digest(serde_json::to_string(&block).unwrap());
                 self.blocks.push(block);
                 break;
             }
