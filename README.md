@@ -1,5 +1,16 @@
-# About
+## This is a very simple and dummy implementation of a blockchain that I did to learn Rust🦀🦀
 
-This is a very simple and dummy implementation of a blockchain that you can only dream of!
+---
 
-------
+## To spin up one:
+
+```bash
+
+    git clone https://github.com/RajeshRk18/simple-blockchain 
+
+    cd simple-blockchain
+
+    cargo run
+```
+
+---
