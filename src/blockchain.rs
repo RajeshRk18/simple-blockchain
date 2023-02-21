@@ -30,7 +30,7 @@ impl BlockChain {
         block.Block_header.merkle_root = merkle_root;
     
         let difficulty: usize = block.Block_header.difficulty.clone() as usize;
-        let expected_slice = format!("{}", 0 * difficulty);
+        let expected_slice = format!("{}", 0*difficulty);
         let txns = serde_json::to_string::<Vec<Txn>>(block.Body.txn_data.as_ref()).unwrap();
     
         loop {
@@ -40,7 +40,7 @@ impl BlockChain {
             let hash_gen_format = format!("{}{}{}", block.Block_header.nonce, txns, prev_hash); //concatenated for simplicity
             let hash_gen = digest(hash_gen_format);
             
-            if hash_gen.split_at(difficulty).0 == expected_slice {
+            if hash_gen.split_at(difficulty).0.as_bytes()[0 .. difficulty].to_vec() == expected_slice.as_bytes() {
                 block.Block_header.coinbase_txn.amount = REWARD;
                 block.Block_header.coinbase_txn.validator = format!("0x{}", thread_rng().gen::<u32>().to_string());
                 block.Block_header.coinbase_txn.message = format!("Mined by {}", block.Block_header.coinbase_txn.validator.clone());
