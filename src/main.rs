@@ -32,7 +32,7 @@ fn main() {
 
         let previous_hash = blockchain.blocks.last().unwrap().Block_header.previous_hash.clone();
 
-        blockchain.add_block(Block::new(previous_hash, vec![]));
+        blockchain.add_block(Block::new(previous_hash, vec![Txn::default()]));
 
         println!("{:#?}", &blockchain);
     }

@@ -8,12 +8,12 @@ use sha256::digest;
 use crate::transaction::*;
 use crate::blockchain::*;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Clone, Hash)]
 pub struct Body {
     pub txn_data: Vec<Txn>
 }
 
-#[derive(Debug, Serialize, Deserialize, Hash, PartialEq)]
+#[derive(Debug, Clone, Serialize, Hash)]
 pub struct BlockHeader {
     pub timestamp: u64,
     pub index: u32,
@@ -25,7 +25,7 @@ pub struct BlockHeader {
     pub difficulty: u8,
     }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Hash)]
 pub struct Block {
     pub Block_header: BlockHeader,
     pub Body: Body

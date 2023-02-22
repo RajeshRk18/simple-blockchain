@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Serialize, Hash, Deserialize, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, Serialize, Hash, Clone)]
 pub struct Txn {
     pub sender: String,
     pub receiver: String,
@@ -17,7 +17,7 @@ impl Txn {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
+#[derive(Debug, Clone, Serialize, Hash)]
 pub struct CoinbaseTxn {
     pub amount: u8,
     pub validator: String,
@@ -29,3 +29,9 @@ impl CoinbaseTxn {
         Self { amount: 0, validator: String::new(), message: String::new()}
         }
     }
+
+impl Default for Txn {
+    fn default() -> Self {
+        Self { sender: String::default(), receiver: String::default(), amount: 0 }
+    }
+}

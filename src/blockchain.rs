@@ -1,8 +1,6 @@
 use crate::block::*;
 use crate::transaction::*;
-
 use serde::{Serialize, Deserialize};
-use sha2::Digest;
 use sha256::digest;
 use rand::{Rng, thread_rng};
 
@@ -12,8 +10,7 @@ pub static mut DIFFICULTY: u8 = 1;
 pub static mut BLOCK_INDEX: u32 = 0;
 
 const REWARD: u8 = 50;
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct BlockChain {
     pub blocks: Vec<Block>,
 }
