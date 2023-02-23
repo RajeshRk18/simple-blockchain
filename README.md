@@ -6,11 +6,11 @@
 
 ```bash
 
-    git clone https://github.com/RajeshRk18/simple-blockchain 
+    git clone https://github.com/RajeshRk18/simple-blockchain.git 
 
     cd simple-blockchain
 
-    cargo run
+    cargo run --release
 ```
 
 ---

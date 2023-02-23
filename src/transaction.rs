@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Hash, Clone)]
 pub struct Txn {
@@ -7,6 +7,7 @@ pub struct Txn {
     pub amount: u32,
 }
 
+#[allow(dead_code)]
 impl Txn {
     pub fn new(sender: String, receiver: String, amount: u32) -> Txn {
         Txn {
@@ -22,16 +23,24 @@ pub struct CoinbaseTxn {
     pub amount: u8,
     pub validator: String,
     pub message: String,
-    }
+}
 
 impl CoinbaseTxn {
     pub fn new() -> Self {
-        Self { amount: 0, validator: String::new(), message: String::new()}
+        Self {
+            amount: 0,
+            validator: String::new(),
+            message: String::new(),
         }
     }
+}
 
 impl Default for Txn {
     fn default() -> Self {
-        Self { sender: String::default(), receiver: String::default(), amount: 0 }
+        Self {
+            sender: String::from("Anon1"),
+            receiver: String::from("Anon2"),
+            amount: 5,
+        }
     }
 }
