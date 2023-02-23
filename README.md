@@ -14,3 +14,15 @@
 ```
 
 ---
+
+## Note🚨
+
+### This blockchain can mine only upto 64 blocks as I have set each byte as bit to make it simple. You can see that below.
+
+
+src/blockchain.rs | line: 37
+``` Rust
+hash_gen.split_at(difficulty).0.as_bytes()[0..difficulty]
+```
+
+---
