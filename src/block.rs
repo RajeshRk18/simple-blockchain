@@ -39,7 +39,7 @@ impl Block {
                 .unwrap()
                 .as_secs(),
             index: update_index(),
-            previous_hash: previous_hash,
+            previous_hash,
             current_hash: String::new(),
             coinbase_txn: CoinbaseTxn::new(),
             merkle_root: MerkleRoot::new(),
@@ -62,10 +62,10 @@ impl MerkleRoot {
     }
 
     pub fn from(txns: &mut Vec<Txn>) -> String {
-        if txns.len() == 0 {
+        if txns.is_empty() {
             digest(String::new().as_bytes());
         }
-        dbg!("merkled");
+
         if txns.len() % 2 != 0 {
             txns.push(txns[txns.len() - 1].clone());
         }
@@ -77,23 +77,20 @@ impl MerkleRoot {
                 digest(ser_txn.as_bytes())
             })
             .collect::<Vec<String>>();
-        dbg!(&hashed_txns);
-        
+
         let mut merkle_root = String::new();
 
         while hashed_txns.len() > 1 {
             let mut inner_tree: Vec<String> = hashed_txns.clone();
-            dbg!(&inner_tree);
             let mut branches = Vec::<String>::new();
             for i in 0..inner_tree.len() / 2 {
                 let index = 2 * i;
                 let left = inner_tree[index].clone();
                 let right = inner_tree[index + 1].clone();
 
-                let left_right = format!("{}{}", left, right);
+                let left_right = format!("{left}{right}");
 
                 branches.push(digest(left_right.as_bytes()));
-                dbg!(&branches);
             }
 
             inner_tree = branches;
@@ -114,21 +111,17 @@ impl MerkleRoot {
 }
 
 fn update_difficulty() -> u8 {
-    let diff = unsafe {
+    unsafe {
         let assign = DIFFICULTY;
         DIFFICULTY += 1;
         assign
-    };
-
-    diff
+    }
 }
 
 fn update_index() -> u32 {
-    let index = unsafe {
+    unsafe {
         let assign = BLOCK_INDEX;
         BLOCK_INDEX += 1;
         assign
-    };
-
-    index
+    }
 }
