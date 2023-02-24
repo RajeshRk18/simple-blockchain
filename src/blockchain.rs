@@ -1,5 +1,6 @@
 use crate::block::*;
 use crate::transaction::*;
+
 use rand::{thread_rng, Rng};
 use serde::Serialize;
 use sha256::digest;
@@ -25,17 +26,23 @@ impl BlockChain {
         block.Block_header.merkle_root = merkle_root;
 
         let difficulty: usize = block.Block_header.difficulty.clone() as usize;
-        let expected_slice = vec![48u8; difficulty]; // Assumed 1 difficulty represents 1byte. So using ASCII Code for zero.
-        let txns = serde_json::to_string::<Vec<Txn>>(block.Body.txn_data.as_ref()).unwrap();
+        let expected_slice = vec![0u8; difficulty].iter().fold(String::new(), |acc, bit| {
+            acc + bit.to_string().as_str()
+        });
         dbg!(&expected_slice);
+        let txns = serde_json::to_string::<Vec<Txn>>(block.Body.txn_data.as_ref()).unwrap();
+
+        let prev_hash = block.Block_header.previous_hash.clone();
         loop {
-            let prev_hash = block.Block_header.previous_hash.clone();
-
-            let hash_gen_format = format!("{}{}{}", block.Block_header.nonce, txns, prev_hash);
-            let hash_gen = digest(hash_gen_format);
-
-            if hash_gen.split_at(difficulty).0.as_bytes()[0..difficulty] == expected_slice {
-                dbg!(hash_gen.split_at(difficulty).0.as_bytes()[0..difficulty].as_ref());
+            let str_format = format!("{}{}{}", block.Block_header.nonce, txns, prev_hash);
+            let hash_gen = digest(str_format);
+            let bit_serialized = hash_gen.as_bytes().iter().fold(String::new(), |acc, byte| {
+                let bits = format!("{:0>8b}", byte);
+                acc + bits.as_str()
+            });
+            dbg!(&bit_serialized.split_at(difficulty).0);
+            if bit_serialized.split_at(difficulty).0 ==  expected_slice{
+                dbg!(bit_serialized.split_at(difficulty).0);
                 dbg!(expected_slice);
                 block.Block_header.coinbase_txn.amount = REWARD;
                 block.Block_header.coinbase_txn.validator =
@@ -52,6 +59,7 @@ impl BlockChain {
             }
 
             block.Block_header.nonce += 1;
+            dbg!("failed");
         }
     }
 }

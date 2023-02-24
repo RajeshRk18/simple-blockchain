@@ -78,6 +78,7 @@ impl MerkleRoot {
             })
             .collect::<Vec<String>>();
         dbg!(&hashed_txns);
+        
         let mut merkle_root = String::new();
 
         while hashed_txns.len() > 1 {

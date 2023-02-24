@@ -13,7 +13,7 @@ fn main() {
     println!("-----------------------------------------------\n   ---------------BLOCKCHAIN----------------");
 
     // block0
-    let previous_hash = String::from("0x00000000");
+    let previous_hash = String::from("00000000");
 
     blockchain.add_block(Block::new(previous_hash, vec![]));
 
