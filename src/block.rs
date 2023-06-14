@@ -73,8 +73,8 @@ impl MerkleRoot {
         let mut hashed_txns = txns
             .iter()
             .map(|txn| {
-                let ser_txn = serde_json::to_string(&txn).unwrap();
-                digest(ser_txn.as_bytes())
+                let serialized = serde_json::to_string(&txn).unwrap();
+                digest(serialized.as_bytes())
             })
             .collect::<Vec<String>>();
 
@@ -88,9 +88,9 @@ impl MerkleRoot {
                 let left = inner_tree[index].clone();
                 let right = inner_tree[index + 1].clone();
 
-                let left_right = format!("{left}{right}");
+                let concat = format!("{left}{right}");
 
-                branches.push(digest(left_right.as_bytes()));
+                branches.push(digest(concat.as_bytes()));
             }
 
             inner_tree = branches;
@@ -112,16 +112,16 @@ impl MerkleRoot {
 
 fn update_difficulty() -> u8 {
     unsafe {
-        let assign = DIFFICULTY;
+        let pre_level = DIFFICULTY;
         DIFFICULTY += 1;
-        assign
+        pre_level
     }
 }
 
 fn update_index() -> u32 {
     unsafe {
-        let assign = BLOCK_INDEX;
+        let pre_level = BLOCK_INDEX;
         BLOCK_INDEX += 1;
-        assign
+        pre_level
     }
 }

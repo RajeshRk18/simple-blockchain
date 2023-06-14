@@ -1,7 +1,6 @@
-## This is a very simple and dummy implementation of a blockchain that I did to learn Rust🦀🦀
+This is a very simple and dummy implementation of a blockchain that I did to learn Rust🦀🦀
 
 ---
-
 ## To spin up one:
 
 ```bash
@@ -12,5 +11,4 @@
 
     cargo run --release
 ```
-
 ---
