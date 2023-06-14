@@ -15,10 +15,7 @@ fn main() {
     // block0
     let previous_hash = String::from("00000000");
 
-    blockchain.add_block(Block::new(previous_hash, vec![]));
-
-    println!("{:#?}", &blockchain);
-    
+    blockchain.add_block(Block::new(previous_hash, vec![]));    
 
     loop {
 

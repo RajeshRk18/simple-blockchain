@@ -10,6 +10,7 @@ pub static mut DIFFICULTY: u8 = 1;
 pub static mut BLOCK_INDEX: u32 = 0;
 
 const REWARD: u8 = 50;
+
 #[derive(Debug, Serialize)]
 pub struct BlockChain {
     pub blocks: Vec<Block>,
