@@ -1,23 +1,19 @@
-#![allow(unused_variables)]
-#![allow(non_snake_case)]
-#![allow(unused_imports)]
-
 use crate::blockchain::*;
 use crate::transaction::*;
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use serde_json::*;
-use sha256::digest;
+use sha2::{Digest, Sha256};
 
-#[derive(Debug, Serialize, Clone, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, Hash)]
 pub struct Body {
     pub txn_data: Vec<Txn>,
 }
 
-#[derive(Debug, Clone, Serialize, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct BlockHeader {
-    pub timestamp: u64,
     pub index: u32,
     pub previous_hash: String,
+    pub timestamp: u64,
     pub current_hash: String,
     pub coinbase_txn: CoinbaseTxn,
     pub merkle_root: String,
@@ -25,15 +21,16 @@ pub struct BlockHeader {
     pub difficulty: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct Block {
-    pub Block_header: BlockHeader,
-    pub Body: Body,
+    pub block_header: BlockHeader,
+    pub body: Body,
 }
 
 impl Block {
     pub fn new(previous_hash: String, txn_data: Vec<Txn>) -> Block {
-        let Block_header = BlockHeader {
+        let random = thread_rng().gen::<u32>();
+        let block_header = BlockHeader {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -43,13 +40,13 @@ impl Block {
             current_hash: String::new(),
             coinbase_txn: CoinbaseTxn::new(),
             merkle_root: MerkleRoot::new(),
-            nonce: 0,
-            difficulty: update_difficulty(),
+            nonce: random,
+            difficulty: DIFFICULTY,
         };
 
-        let Body = Body { txn_data };
+        let body = Body { txn_data };
 
-        Block { Block_header, Body }
+        Block { block_header, body }
     }
 }
 
@@ -61,60 +58,69 @@ impl MerkleRoot {
         String::new()
     }
 
-    pub fn from(txns: &mut Vec<Txn>) -> String {
+    pub fn from(txns: Vec<Txn>) -> String {
+        let mut txns = txns;
         if txns.is_empty() {
-            digest(String::new().as_bytes());
+            let mut hasher = Sha256::new();
+            hasher.update(String::default().as_bytes());
+            let hash = hasher.finalize().as_slice().to_owned();
+            return hex::encode(hash);
         }
 
         if txns.len() % 2 != 0 {
             txns.push(txns[txns.len() - 1].clone());
         }
 
-        let mut hashed_txns = txns
+        let hashed_txns = txns
             .iter()
             .map(|txn| {
-                let serialized = serde_json::to_string(&txn).unwrap();
-                digest(serialized.as_bytes())
+                let mut hasher = Sha256::new();
+                hasher.update(&txn.sender.as_bytes());
+                hasher.update(&txn.receiver.as_bytes());
+                hasher.update(&txn.amount.to_string().as_bytes());
+                let hash = hasher.finalize().as_slice().to_owned();
+                hex::encode(hash)
             })
             .collect::<Vec<String>>();
 
+        Self::construct_root(hashed_txns)
+    }
+
+    fn construct_root(hashed_leaves: Vec<String>) -> String {
         let mut merkle_root = String::new();
 
-        while hashed_txns.len() > 1 {
-            let mut inner_tree: Vec<String> = hashed_txns.clone();
-            let mut branches = Vec::<String>::new();
-            for i in 0..inner_tree.len() / 2 {
+        let mut hashes = hashed_leaves;
+
+        while hashes.len() > 1 {
+            let mut nodes = hashes.clone();
+            let mut parent_nodes = Vec::<String>::new();
+            for i in 0..nodes.len() / 2 {
                 let index = 2 * i;
-                let left = inner_tree[index].clone();
-                let right = inner_tree[index + 1].clone();
+                let left = nodes[index].clone();
+                let right = nodes[index + 1].clone();
 
-                let concat = format!("{left}{right}");
-
-                branches.push(digest(concat.as_bytes()));
+                let mut hasher = Sha256::new();
+                hasher.update(&left.as_bytes());
+                hasher.update(&right.as_bytes());
+                let hash = hasher.finalize().as_slice().to_owned();
+                let hash = hex::encode(hash);
+                parent_nodes.push(hash);
             }
 
-            inner_tree = branches;
-            if inner_tree.len() == 1 {
-                merkle_root = inner_tree[0].clone();
+            nodes = parent_nodes;
+            if nodes.len() == 1 {
+                merkle_root = nodes[0].clone();
                 break;
             }
 
-            if inner_tree.len() % 2 != 0 {
-                inner_tree.push(inner_tree[inner_tree.len() - 1].clone());
+            if nodes.len() % 2 != 0 {
+                nodes.push(nodes[nodes.len() - 1].clone());
             }
 
-            hashed_txns = inner_tree;
+            hashes = nodes;
         }
 
         merkle_root
-    }
-}
-
-fn update_difficulty() -> u8 {
-    unsafe {
-        let pre_level = DIFFICULTY;
-        DIFFICULTY += 1;
-        pre_level
     }
 }
 
