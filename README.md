@@ -7,13 +7,13 @@ A dummy implementation of blockchain in Rust🦀
 ### Run a node:
 
 ```bash
-cargo run --bin node -- -n 1729
+cargo run --bin node -- -s 1729
 ```
 
 ### Send a transaction:
 
 ```bash
-cargo run --bin client -- -p 1729 -a <node address> txn <sender> <receiver> <value>  
+cargo run --bin client -- -p 1729 txn <sender> <receiver> <value>  
 ```
 
 ---

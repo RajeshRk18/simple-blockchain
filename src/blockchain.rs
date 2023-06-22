@@ -6,6 +6,7 @@ use rand::{thread_rng, Rng as _};
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
+use log::info;
 
 pub const DIFFICULTY: u8 = 2;
 pub static mut BLOCK_INDEX: u32 = 0;
@@ -44,6 +45,7 @@ impl BlockChain {
                 });
 
             if hash_to_bits.starts_with(target.as_str()) {
+                info!("{}", format!("Mined!⚡️"));
                 block.block_header.coinbase_txn.amount = REWARD;
                 block.block_header.coinbase_txn.validator =
                     format!("0x{}", thread_rng().gen::<u32>());
@@ -104,6 +106,7 @@ impl BlockChain {
                 });
 
             if hash_to_bits.starts_with(target.as_str()) {
+                info!("{}", format!("Mined genesis!👀🎉"));
                 block.block_header.coinbase_txn.amount = REWARD;
                 block.block_header.coinbase_txn.validator =
                     format!("0x{}", thread_rng().gen::<u32>());
@@ -122,26 +125,23 @@ impl BlockChain {
         }
     }
 
-    pub fn extend(&self, block: Block) -> Result<Self> {
-        if block.block_header.previous_hash != self.blocks.last().unwrap().block_header.current_hash
-        {
-            bail!("Block is an invalid extension of the previous blockchain state");
-        }
-        let mut new_chain = self.clone();
-        new_chain.blocks.push(block);
-        Ok(new_chain)
-    }
-
-    fn contains(&self, txn_id: &str, block_index: usize) -> bool {
-        let block = self.blocks[block_index].clone();
-
-        for txn in block.body.txn_data {
-            if &txn.id == txn_id {
-                return true;
+    pub fn extend(&self, new_block: Block) -> Result<Self> {
+        match self.blocks.last() {
+            Some(previous_block) => {
+                if new_block.block_header.previous_hash != previous_block.block_header.current_hash
+                {
+                    bail!("Block is an invalid extension of the previous blockchain state");
+                }
+                let mut new_chain = self.clone();
+                new_chain.blocks.push(new_block);
+                Ok(new_chain)
+            },
+            None => {
+                let mut new_chain = self.clone();
+                new_chain.blocks.push(new_block);
+                Ok(new_chain)                
             }
         }
-
-        false
     }
 
     pub fn hash(block: Block) -> String {

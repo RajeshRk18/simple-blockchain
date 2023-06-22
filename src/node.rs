@@ -102,7 +102,7 @@ impl Node {
                     .map_err(|e| e.to_string());
 
                 if let Err(e) = response_sender.send(result) {
-                    warn!("Failed to send message {:?}", e);
+                    warn!("Failed to send response {:?}", e);
                 }
             }
 
@@ -161,6 +161,7 @@ impl Node {
                 let txn = message.clone();
                 if self.mempool.insert(Txn::try_from(txn).unwrap()) {
                     self.broadcast(message).await;
+                    return Ok(Some("Transaction processed".to_string()));
                 }
             }
         }

@@ -37,7 +37,7 @@ impl Command {
     pub async fn request(self, address: SocketAddr) -> Result<()> {
         let mut sender = MessageSender::new();
         let txn = bincode::serialize(&self)?;
-        sender.send(address, txn.into()).await;
+        let response = sender.send(address, txn.into()).await;
         Ok(())
     }
 }
