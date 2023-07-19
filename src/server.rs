@@ -48,21 +48,23 @@ async fn spawn_tasks(
     client: SocketAddr,
     boot_node: Option<SocketAddr>,
 ) -> (JoinHandle<()>, JoinHandle<()>, JoinHandle<()>) {
+    
     let (server_tcp_receiver, server_channel_receiver) = MessageReceiver::new(server);
     let server_handle = tokio::spawn(async move {
         server_tcp_receiver.run().await;
     });
-
+    
     let (client_tcp_receiver, client_channel_receiver) = MessageReceiver::new(client);
     let client_handle = tokio::spawn(async move {
         client_tcp_receiver.run().await;
     });
-
+    
     let mut node = Node::new(server, boot_node);
     let node_handle = tokio::spawn(async move {
         node.run(server_channel_receiver, client_channel_receiver)
             .await;
     });
+
 
     (server_handle, client_handle, node_handle)
 }

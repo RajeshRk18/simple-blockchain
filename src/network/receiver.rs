@@ -2,7 +2,7 @@
 use super::error::NetworkError::*;
 use anyhow::Result;
 use bytes::Bytes;
-use futures::{stream::SplitSink, SinkExt as _, StreamExt as _};
+use futures::{stream::SplitSink,SinkExt as _, StreamExt as _};
 use log::{info, warn};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt::Debug, net::SocketAddr};

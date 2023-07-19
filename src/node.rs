@@ -39,11 +39,10 @@ pub enum Message {
 
 pub struct Node {
     address: SocketAddr,
-    sender: MessageSender,
+    sender: MessageSender, // Receiver end of the channel is embedded in MessageSender.
     peers: HashSet<SocketAddr>,
     mempool: HashSet<Txn>,
     state: BlockChain,
-
     miner: Mine,
 }
 
@@ -76,6 +75,7 @@ impl Node {
         mut peer_handle: mpsc::Receiver<(Message, oneshot::Sender<String>)>,
         mut client_handle: mpsc::Receiver<(Txn, oneshot::Sender<Result<Option<String>, String>>)>,
     ) -> JoinHandle<()> {
+
         self.run_miner();
 
         let state_message = Message::GetState {
@@ -84,33 +84,36 @@ impl Node {
         self.broadcast(state_message).await;
 
         loop {
-            // Receive block from miner task
-            if let Some(block) = self.miner.block_receiver.recv().await {
-                info!("Block received from Miner task: {:?}", block);
-
-                if let Ok(new_state) = self.state.extend(block) {
-                    self.update_state(new_state).await;
+            tokio::select! {
+                // Receive block from miner task
+                Some(block) = self.miner.block_receiver.recv() => {
+                    info!("Block received from Miner task: {:?}", block);
+    
+                    if let Ok(new_state) = self.state.extend(block) {
+                        info!("Updating state");
+                        self.update_state(new_state).await;
+                    }
                 }
-            }
-
-            // Receive transaction request from client
-            if let Some((client_request, response_sender)) = client_handle.recv().await {
-                info!("Received txn request from client: {:?}", client_request);
-                let result = self
-                    .handle_message(client_request.clone().try_into().unwrap())
-                    .await
-                    .map_err(|e| e.to_string());
-
-                if let Err(e) = response_sender.send(result) {
-                    warn!("Failed to send response {:?}", e);
+    
+                // Receive transaction request from client
+                Some((client_request, node)) = client_handle.recv() => {
+                    info!("Received txn request from client: {:?}", client_request);
+                    let result = self
+                        .handle_message(client_request.clone().try_into().unwrap())
+                        .await
+                        .map_err(|e| e.to_string());
+    
+                    if let Err(e) = node.send(result) {
+                        warn!("Failed to send response {:?}", e);
+                    }
                 }
-            }
-
-            // Receive message from peer
-            if let Some((message, reply_sender)) = peer_handle.recv().await {
-                info!("Received peer message {:?}", message);
-                reply_sender.send("Acknowledged".to_string()).unwrap();
-                self.handle_message(message.clone()).await.unwrap();
+    
+                // Receive message from peer
+                Some((message, node)) = peer_handle.recv() => {
+                    info!("Received peer message {:?}", message);
+                    node.send("Acknowledged".to_string()).unwrap();
+                    self.handle_message(message.clone()).await.unwrap();
+                }
             }
         }
     }
@@ -145,11 +148,13 @@ impl Node {
                 if state.blocks.len() > self.state.blocks.len() {
                     info!("Received longest chain from {}", from);
 
+                    let current_latest_block = self.state.blocks.last().unwrap();
                     let new_block = state.blocks.last().unwrap();
                     let new_block_root = new_block.block_header.merkle_root.clone();
                     let verify_root = MerkleRoot::from(new_block.body.txn_data.clone());
 
-                    if new_block_root == verify_root {
+                    let new_block_check_passed = new_block_root == verify_root && new_block.block_header.index == current_latest_block.block_header.index + 1 && current_latest_block.block_header.current_hash == new_block.block_header.previous_hash;
+                    if new_block_check_passed {
                         self.update_state(state).await;
                     } else {
                         warn!("Not a valid state transition {}", state);
@@ -183,8 +188,6 @@ impl Node {
                 .contains(txn)
         });
 
-        self.run_miner();
-
         let state = Message::State {
             from: self.address,
             peers: self.peers.clone(),
@@ -192,33 +195,39 @@ impl Node {
         };
 
         self.broadcast(state).await;
+        self.stop_and_restart().await;
+    }
+
+    async fn stop_and_restart(&mut self) {
+        self.miner.task.abort();
+        self.run_miner();
     }
 
     fn run_miner(&mut self) {
+
         match self.state.blocks.last() {
 
             Some(block) => {
                 info!("Restarting miner task...");
                 let block = block.clone();
                 let txns = self.mempool.clone().into_iter().collect();
-                let sender = self.miner.block_sender.clone();
-                self.miner.task.abort();
-        
+                let block_sender = self.miner.block_sender.clone();
+                
                 self.miner.task = tokio::spawn(async move {
                     let new_block = BlockChain::mine(txns, block).await;
-                    if let Err(e) = sender.send(new_block).await {
-                        warn!("Can't send mined block to receiver channel: {}", e);
+                    if let Err(e) = block_sender.send(new_block).await {
+                        warn!("Can't send mined block to receiver: {}", e);
                     }
                 });
             },
 
             None => {
                 info!("Mining genesis block!");
-                let sender = self.miner.block_sender.clone();
+                let signal_receiver = self.miner.block_sender.clone();
                 self.miner.task = tokio::spawn(async move {
-                    let new_block = BlockChain::mine_genesis().await;
-                    if let Err(e) = sender.send(new_block).await {
-                        warn!("Can't send mined block to receiver channel: {}", e);
+                    let new_block = BlockChain::mine_genesis();
+                    if let Err(e) = signal_receiver.send(new_block).await {
+                        warn!("Can't send mined block to receiver: {}", e);
                     }
                 });
             }

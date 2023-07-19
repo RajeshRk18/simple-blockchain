@@ -27,17 +27,21 @@ impl BlockChain {
         let merkle_root = MerkleRoot::from(txns.clone());
         let mut block = Block::new(previous_block.block_header.current_hash.clone(), txns);
         block.block_header.merkle_root = merkle_root;
+        block.block_header.nonce = thread_rng().gen::<u32>();
 
         let difficulty = block.block_header.difficulty as usize;
         let target: String = vec!["0"; difficulty].join("").into();
 
+        const YIELD_INTERVAL: u32 = 10000;
+    
         loop {
-            tokio::task::yield_now().await;
+            if block.block_header.nonce % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
 
             let block_hash = Self::hash(block.clone());
 
             let hash_to_bits = block_hash
-                .as_bytes()
                 .iter()
                 .fold(String::new(), |acc, byte| {
                     let bits = format!("{byte:0>8b}");
@@ -64,8 +68,8 @@ impl BlockChain {
         }
     }
 
-    pub async fn mine_genesis() -> Block {
-        let random = thread_rng().gen::<u32>();
+    pub fn mine_genesis() -> Block {
+        let nonce = thread_rng().gen::<u32>();
         let block_header = BlockHeader {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -76,7 +80,7 @@ impl BlockChain {
             current_hash: String::new(),
             coinbase_txn: CoinbaseTxn::new(),
             merkle_root: MerkleRoot::new(),
-            nonce: random,
+            nonce,
             difficulty: DIFFICULTY,
         };
         let body = Body {txn_data: vec![]};
@@ -85,6 +89,7 @@ impl BlockChain {
             block_header,
             body
         };
+
         let merkle_root = MerkleRoot::from(block.body.txn_data.clone());
 
         block.block_header.merkle_root = merkle_root;
@@ -93,12 +98,10 @@ impl BlockChain {
         let target: String = vec!["0"; difficulty].join("").into();
 
         loop {
-            tokio::task::yield_now().await;
 
             let block_hash = Self::hash(block.clone());
 
             let hash_to_bits = block_hash
-                .as_bytes()
                 .iter()
                 .fold(String::new(), |acc, byte| {
                     let bits = format!("{byte:0>8b}");
@@ -144,7 +147,7 @@ impl BlockChain {
         }
     }
 
-    pub fn hash(block: Block) -> String {
+    pub fn hash(block: Block) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(&block.block_header.index.to_string().as_bytes());
         hasher.update(&block.block_header.previous_hash.as_bytes());
@@ -153,7 +156,7 @@ impl BlockChain {
         hasher.update(&block.block_header.nonce.to_string().as_bytes());
         hasher.update(Self::hash_txns(&block.body.txn_data).as_bytes());
         let hash = hasher.finalize().as_slice().to_owned();
-        hex::encode(hash)
+        hash
     }
 
     pub fn hash_txns(txns: &Vec<Txn>) -> String {
