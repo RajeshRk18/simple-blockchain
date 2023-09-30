@@ -1,8 +1,10 @@
-use crate::blockchain::*;
 use crate::transaction::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+pub const DIFFICULTY: u8 = 10;
+pub static mut BLOCK_INDEX: u32 = 0;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash)]
 pub struct Body {

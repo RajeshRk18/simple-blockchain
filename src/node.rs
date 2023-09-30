@@ -30,7 +30,7 @@ pub enum Message {
         receiver: SocketAddr,
     },
 
-    State {
+    ShareState {
         from: SocketAddr,
         peers: HashSet<SocketAddr>,
         state: BlockChain,
@@ -89,7 +89,7 @@ impl Node {
                 Some(block) = self.miner.block_receiver.recv() => {
                     info!("Block received from Miner task: {:?}", block);
     
-                    if let Ok(new_state) = self.state.extend(block) {
+                    if let Ok(new_state) = self.state.add_block(block) {
                         info!("Updating state");
                         self.update_state(new_state).await;
                     }
@@ -122,7 +122,7 @@ impl Node {
         match message {
             Message::GetState { receiver } => {
                 self.peers.insert(receiver);
-                let response = Message::State {
+                let response = Message::ShareState {
                     from: self.address,
                     peers: self.peers.clone(),
                     state: self.state.clone(),
@@ -140,7 +140,7 @@ impl Node {
                 self.sender.send(receiver, data.into()).await;
             }
 
-            Message::State { from, peers, state } => {
+            Message::ShareState { from, peers, state } => {
                 self.peers.insert(from);
                 self.peers.extend(peers);
                 self.peers.remove(&self.address);
@@ -188,7 +188,7 @@ impl Node {
                 .contains(txn)
         });
 
-        let state = Message::State {
+        let state = Message::ShareState {
             from: self.address,
             peers: self.peers.clone(),
             state: self.state.clone(),
