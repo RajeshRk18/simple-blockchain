@@ -2,7 +2,7 @@
 use super::error::NetworkError::*;
 use anyhow::Result;
 use bytes::Bytes;
-use futures::{stream::SplitSink,SinkExt as _, StreamExt as _};
+use futures::{stream::SplitSink, SinkExt as _, StreamExt as _};
 use log::{info, warn};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt::Debug, net::SocketAddr};
@@ -15,6 +15,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 pub struct MessageReceiver<Request, Response> {
     address: SocketAddr,
     sender: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
+    receiver_type: String,
 }
 
 impl<Request, Response> MessageReceiver<Request, Response>
@@ -22,12 +23,16 @@ where
     Request: DeserializeOwned + Sync + Send + Debug + 'static,
     Response: Serialize + Send + Debug + 'static,
 {
-    pub fn new(addr: SocketAddr) -> (Self, mpsc::Receiver<(Request, oneshot::Sender<Response>)>) {
+    pub fn new(
+        addr: SocketAddr,
+        receiver_type: &str,
+    ) -> (Self, mpsc::Receiver<(Request, oneshot::Sender<Response>)>) {
         let (sender, receiver) = mpsc::channel(500);
         (
             Self {
                 address: addr,
                 sender,
+                receiver_type: receiver_type.to_owned(),
             },
             receiver,
         )
@@ -36,7 +41,7 @@ where
     pub async fn run(&self) {
         let listener = TcpListener::bind(self.address).await.unwrap();
 
-        info!("Listening to {}", self.address);
+        info!("{} listening to {}", self.receiver_type, self.address);
 
         loop {
             let (stream, sender) = match listener.accept().await {
@@ -67,12 +72,12 @@ where
                         if let Err(e) = Self::dispatch(&mut writer, channel.clone(), msg).await {
                             warn!("Failed to dispatch message {}", e);
                         }
-                    },
+                    }
 
                     Err(e) => {
                         warn!("{}", e);
                         return;
-                    },
+                    }
                 }
             }
         });

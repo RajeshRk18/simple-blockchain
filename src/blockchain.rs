@@ -2,11 +2,11 @@ use crate::block::*;
 use crate::transaction::*;
 
 use anyhow::Result;
+use log::{error, info};
 use rand::{thread_rng, Rng as _};
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
-use log::{info, error};
 
 const REWARD: u8 = 50;
 
@@ -17,19 +17,21 @@ pub struct BlockChain {
 
 impl BlockChain {
     pub fn new() -> Self {
-        Self { 
-            blocks: vec![],
-        }
+        Self { blocks: vec![] }
     }
 
     pub fn tip(&self) -> String {
-        self.blocks.last().unwrap().block_header.current_hash.clone()
+        self.blocks
+            .last()
+            .unwrap()
+            .block_header
+            .current_hash
+            .clone()
     }
 
     pub fn all_blocks_inlongest_chain(&self) -> Vec<Block> {
         self.blocks.clone()
     }
-
 
     pub async fn mine(txns: Vec<Txn>, previous_block: Block) -> Block {
         let merkle_root = MerkleRoot::from(txns.clone());
@@ -41,10 +43,10 @@ impl BlockChain {
         let target: String = vec!["0"; difficulty].join("").into();
 
         dbg!(&target);
-        const YIELD_INTERVAL: u32 = 10000; 
+        const YIELD_INTERVAL: u32 = 10000;
         // max iter per session to yield back to the executor who will send abort signal if the current block has been mined.
         // This will help us rerun miner task with new block and not infinitelt work on mining already mined blocks.
-    
+
         loop {
             if block.block_header.nonce % YIELD_INTERVAL == 0 {
                 tokio::task::yield_now().await;
@@ -52,12 +54,10 @@ impl BlockChain {
 
             let block_hash = Self::hash_block(block.clone());
 
-            let hash_to_bits = block_hash
-                .iter()
-                .fold(String::new(), |acc, byte| {
-                    let bits = format!("{byte:0>8b}");
-                    acc + bits.as_str()
-                });
+            let hash_to_bits = block_hash.iter().fold(String::new(), |acc, byte| {
+                let bits = format!("{byte:0>8b}");
+                acc + bits.as_str()
+            });
 
             if hash_to_bits.starts_with(target.as_str()) {
                 dbg!(hash_to_bits);
@@ -95,12 +95,9 @@ impl BlockChain {
             nonce,
             difficulty: DIFFICULTY,
         };
-        let body = Body {txn_data: vec![]};
+        let body = Body { txn_data: vec![] };
 
-        let mut block = Block {
-            block_header,
-            body
-        };
+        let mut block = Block { block_header, body };
 
         let merkle_root = MerkleRoot::from(block.body.txn_data.clone());
 
@@ -110,15 +107,12 @@ impl BlockChain {
         let target: String = vec!["0"; difficulty].join("").into();
 
         loop {
-
             let block_hash = Self::hash_block(block.clone());
 
-            let hash_to_bits = block_hash
-                .iter()
-                .fold(String::new(), |acc, byte| {
-                    let bits = format!("{byte:0>8b}");
-                    acc + bits.as_str()
-                });
+            let hash_to_bits = block_hash.iter().fold(String::new(), |acc, byte| {
+                let bits = format!("{byte:0>8b}");
+                acc + bits.as_str()
+            });
 
             if hash_to_bits.starts_with(target.as_str()) {
                 info!("{}", format!("Mined genesis!👀🎉"));
@@ -150,11 +144,11 @@ impl BlockChain {
                 let mut new_chain = self.clone();
                 new_chain.blocks.push(new_block);
                 Ok(new_chain)
-            },
+            }
             None => {
                 let mut new_chain = self.clone();
                 new_chain.blocks.push(new_block);
-                Ok(new_chain)                
+                Ok(new_chain)
             }
         }
     }
@@ -195,7 +189,6 @@ impl BlockChain {
         let hex_string = hex::encode(hash);
         hex_string
     }
-
 }
 
 impl std::fmt::Display for BlockChain {

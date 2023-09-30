@@ -4,10 +4,10 @@ Also includes receiver connection because sender end creates receiver on demand 
 use super::error::NetworkError::*;
 
 use bytes::Bytes;
-use std::{collections::HashMap, net::SocketAddr};
 use futures::sink::SinkExt as _;
 use futures::stream::StreamExt as _;
 use log::{info, warn};
+use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, *};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -90,4 +90,3 @@ impl ReceiverConnection {
         }
     }
 }
-

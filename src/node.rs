@@ -6,7 +6,10 @@ use anyhow::{bail, Result};
 use log::{info, warn};
 use serde::*;
 use std::collections::HashSet;
+use std::io::BufRead;
+use std::io::Read;
 use std::net::SocketAddr;
+use std::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -47,14 +50,53 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(address: SocketAddr, seed: Option<SocketAddr>) -> Self {
+    pub async fn new(address: SocketAddr, seed: Option<SocketAddr>) -> Self {
         let mut peers = HashSet::<SocketAddr>::with_capacity(10);
 
         if let Some(seed) = seed {
             peers.insert(seed);
         }
 
-        let (sender, receiver) = mpsc::channel(500);
+        let (sender_channel, receiver_channel) = mpsc::channel(500);
+
+        let mut sender = MessageSender::new();
+        match seed {
+            Some(node) => {
+                info!(
+                    "Syncing with latest state of Blockchain, Seed node: {}",
+                    node
+                );
+
+                let get_latest_state = Message::GetState { receiver: address };
+
+                match bincode::serialize(&get_latest_state) {
+                    Ok(bytes) => {
+                        sender.send(node, bytes.into()).await;
+
+                        let mut node_connect = TcpStream::connect(node).unwrap();
+
+                        let mut response = Vec::new();
+
+                        node_connect.read_to_end(&mut response);
+
+                        match bincode::deserialize(&response) {
+                            Ok(state) => {
+                                let mut blockchain = BlockChain::new();
+                                blockchain = state;
+                            }
+                            Err(_) => {
+                                warn!("Failed to serialize state message from seed 😔. Try again!")
+                            }
+                        }
+                    }
+
+                    Err(e) => {
+                        warn!("Failed to serialize message");
+                    }
+                }
+            }
+            None => {}
+        }
 
         Self {
             address,
@@ -64,8 +106,8 @@ impl Node {
             state: BlockChain::new(),
             miner: Mine {
                 task: tokio::spawn(async {}),
-                block_sender: sender,
-                block_receiver: receiver,
+                block_sender: sender_channel,
+                block_receiver: receiver_channel,
             },
         }
     }
@@ -75,7 +117,6 @@ impl Node {
         mut peer_handle: mpsc::Receiver<(Message, oneshot::Sender<String>)>,
         mut client_handle: mpsc::Receiver<(Txn, oneshot::Sender<Result<Option<String>, String>>)>,
     ) -> JoinHandle<()> {
-
         self.run_miner();
 
         let state_message = Message::GetState {
@@ -88,13 +129,13 @@ impl Node {
                 // Receive block from miner task
                 Some(block) = self.miner.block_receiver.recv() => {
                     info!("Block received from Miner task: {:?}", block);
-    
+
                     if let Ok(new_state) = self.state.add_block(block) {
                         info!("Updating state");
                         self.update_state(new_state).await;
                     }
                 }
-    
+
                 // Receive transaction request from client
                 Some((client_request, node)) = client_handle.recv() => {
                     info!("Received txn request from client: {:?}", client_request);
@@ -102,12 +143,12 @@ impl Node {
                         .handle_message(client_request.clone().try_into().unwrap())
                         .await
                         .map_err(|e| e.to_string());
-    
+
                     if let Err(e) = node.send(result) {
                         warn!("Failed to send response {:?}", e);
                     }
                 }
-    
+
                 // Receive message from peer
                 Some((message, node)) = peer_handle.recv() => {
                     info!("Received peer message {:?}", message);
@@ -153,7 +194,11 @@ impl Node {
                     let new_block_root = new_block.block_header.merkle_root.clone();
                     let verify_root = MerkleRoot::from(new_block.body.txn_data.clone());
 
-                    let new_block_check_passed = new_block_root == verify_root && new_block.block_header.index == current_latest_block.block_header.index + 1 && current_latest_block.block_header.current_hash == new_block.block_header.previous_hash;
+                    let new_block_check_passed = new_block_root == verify_root
+                        && new_block.block_header.index
+                            == current_latest_block.block_header.index + 1
+                        && current_latest_block.block_header.current_hash
+                            == new_block.block_header.previous_hash;
                     if new_block_check_passed {
                         self.update_state(state).await;
                     } else {
@@ -171,7 +216,7 @@ impl Node {
             }
         }
 
-    Ok(None)
+        Ok(None)
     }
 
     async fn update_state(&mut self, new_state: BlockChain) {
@@ -204,22 +249,20 @@ impl Node {
     }
 
     fn run_miner(&mut self) {
-
         match self.state.blocks.last() {
-
             Some(block) => {
                 info!("Restarting miner task...");
                 let block = block.clone();
                 let txns = self.mempool.clone().into_iter().collect();
                 let block_sender = self.miner.block_sender.clone();
-                
+
                 self.miner.task = tokio::spawn(async move {
                     let new_block = BlockChain::mine(txns, block).await;
                     if let Err(e) = block_sender.send(new_block).await {
                         warn!("Can't send mined block to receiver: {}", e);
                     }
                 });
-            },
+            }
 
             None => {
                 info!("Mining genesis block!");
