@@ -59,13 +59,13 @@ impl Node {
 
         let (sender_channel, receiver_channel) = mpsc::channel(500);
 
-        let mut sender = MessageSender::new();
         match seed {
             Some(node) => {
                 info!(
                     "Syncing with latest state of Blockchain, Seed node: {}",
                     node
                 );
+                let mut sender = MessageSender::new();
 
                 let get_latest_state = Message::GetState { receiver: address };
 
@@ -80,17 +80,28 @@ impl Node {
                         node_connect.read_to_end(&mut response);
 
                         match bincode::deserialize(&response) {
-                            Ok(state) => {
-                                let mut blockchain = BlockChain::new();
-                                blockchain = state;
-                            }
+                            Ok(response) => {
+                                let Message::ShareState { peers, state, .. }= response else { todo!() };
+                                return Self {
+                                    address,
+                                    sender,
+                                    peers,
+                                    mempool: HashSet::new(),
+                                    state,
+                                    miner: Mine {
+                                        task: tokio::spawn(async {}),
+                                        block_sender: sender_channel,
+                                        block_receiver: receiver_channel,
+                                    }
+                                };
+                            },
                             Err(_) => {
                                 warn!("Failed to serialize state message from seed 😔. Try again!")
                             }
                         }
                     }
 
-                    Err(e) => {
+                    Err(_) => {
                         warn!("Failed to serialize message");
                     }
                 }
