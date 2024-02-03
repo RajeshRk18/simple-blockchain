@@ -1,23 +1,141 @@
 use crate::block::*;
 use crate::blockchain::BlockChain;
-use crate::transaction::Txn;
-use ::network::sender::MessageSender;
+use crate::transaction::{CoinbaseTxn, Txn};
+use crate::sender::MessageSender;
 use anyhow::{bail, Result};
 use log::{info, warn};
+use crate::error::NetworkError;
+use rand::{thread_rng, Rng as _};
 use serde::*;
+use sha2::{Digest as _, Sha256};
 use std::collections::HashSet;
-use std::io::BufRead;
-use std::io::Read;
 use std::net::SocketAddr;
-use std::net::TcpStream;
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::io::AsyncReadExt as _;
+
+const REWARD: u8 = 50;
 
 pub struct Mine {
+    // Why task joinhandle required?
+    // Because we need to have a control over the miner task.
+    // For example, when we need to abort the mining task because another peer has already mined,
+    // we need to abort the mining task running in the node.
     task: JoinHandle<()>,
+
+    // Channel to send and receiver blocks.
+    // Having them as field so that it can be used anywhere and need not to pass it as a function argument.
     block_sender: mpsc::Sender<Block>,
     block_receiver: mpsc::Receiver<Block>,
+
+}
+
+impl Mine {
+    pub async fn mine(txns: Vec<Txn>, previous_block: Block) -> Block {
+        let merkle_root = MerkleRoot::from(txns.clone());
+        let mut block = Block::new(previous_block.block_header.current_hash.clone(), txns);
+        block.block_header.merkle_root = merkle_root;
+        block.block_header.nonce = thread_rng().gen::<u32>();
+
+        let difficulty = block.block_header.difficulty as usize;
+        let target: String = vec!["0"; difficulty].join("").into();
+
+        dbg!(&target);
+
+        const YIELD_INTERVAL: u32 = 10000;
+        // max iter per session to yield back to the executor who will send abort signal if the current block has been mined.
+        // This will help us rerun miner task with new block and not infinitely work on mining already mined blocks.
+
+        // This yield can be avoided by having the Node sending a mined signal using a mpsc channel.
+        // As receiver end cannot be sent outside the self(which is the struct Mine) due to uncertainty in lifetime,
+        // we occasionally make this thread yield occasionally to the executor.
+        loop {
+            if block.block_header.nonce % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
+            let block_hash = BlockChain::hash_block(block.clone());
+
+            let hash_to_bits = block_hash.iter().fold(String::new(), |acc, byte| {
+                let bits = format!("{byte:0>8b}");
+                acc + bits.as_str()
+            });
+
+            if hash_to_bits.starts_with(target.as_str()) {
+                dbg!(hash_to_bits);
+                info!("{}", format!("Mined!⚡️"));
+                block.block_header.coinbase_txn.amount = REWARD;
+                block.block_header.coinbase_txn.validator =
+                    format!("0x{}", thread_rng().gen::<u32>()); // TODO: Node network address should be added
+
+                let mut hasher = Sha256::new();
+                hasher.update(&serde_json::to_string(&block).unwrap().as_bytes());
+
+                let hash = hex::encode(hasher.finalize().as_slice().to_owned());
+
+                block.block_header.current_hash = hash;
+
+                return block;
+            }
+
+            block.block_header.nonce += 1;
+        }
+    }
+
+    pub fn mine_genesis() -> Block {
+        let nonce = thread_rng().gen::<u32>();
+        let block_header = BlockHeader {
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            index: 0,
+            previous_hash: "00000".to_string(),
+            current_hash: String::new(),
+            coinbase_txn: CoinbaseTxn::new(),
+            merkle_root: MerkleRoot::new(),
+            nonce,
+            difficulty: DIFFICULTY,
+        };
+        let body = Body { txn_data: vec![] };
+
+        let mut block = Block { block_header, body };
+
+        let merkle_root = MerkleRoot::from(block.body.txn_data.clone());
+
+        block.block_header.merkle_root = merkle_root;
+
+        let difficulty = block.block_header.difficulty as usize;
+        let target: String = vec!["0"; difficulty].join("").into();
+
+        loop {
+            let block_hash = BlockChain::hash_block(block.clone());
+
+            let hash_to_bits = block_hash.iter().fold(String::new(), |acc, byte| {
+                let bits = format!("{byte:0>8b}");
+                acc + bits.as_str()
+            });
+
+            if hash_to_bits.starts_with(target.as_str()) {
+                info!("{}", format!("Mined genesis!👀🎉"));
+                block.block_header.coinbase_txn.amount = REWARD;
+                block.block_header.coinbase_txn.validator =
+                    format!("0x{}", thread_rng().gen::<u32>());
+
+                let mut hasher = Sha256::new();
+                hasher.update(&serde_json::to_string(&block).unwrap().as_bytes());
+
+                let hash = hex::encode(hasher.finalize().as_slice().to_owned());
+
+                block.block_header.current_hash = hash;
+
+                return block;
+            }
+
+            block.block_header.nonce += 1;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,14 +168,14 @@ pub struct Node {
 }
 
 impl Node {
-    pub async fn new(address: SocketAddr, seed: Option<SocketAddr>) -> Self {
+    pub async fn new(address: SocketAddr, seed: Option<SocketAddr>) -> Result<Self> {      
         let mut peers = HashSet::<SocketAddr>::with_capacity(10);
 
         if let Some(seed) = seed {
             peers.insert(seed);
         }
 
-        let (sender_channel, receiver_channel) = mpsc::channel(500);
+        let (block_sender, block_receiver) = mpsc::channel::<Block>(500);
 
         match seed {
             Some(node) => {
@@ -71,55 +189,60 @@ impl Node {
 
                 match bincode::serialize(&get_latest_state) {
                     Ok(bytes) => {
+
                         sender.send(node, bytes.into()).await;
 
-                        let mut node_connect = TcpStream::connect(node).unwrap();
+                        let mut node_connect = TcpStream::connect(node).await.unwrap();
 
                         let mut response = Vec::new();
 
-                        node_connect.read_to_end(&mut response);
-
+                        node_connect.read_to_end(&mut response).await?;
                         match bincode::deserialize(&response) {
-                            Ok(response) => {
-                                let Message::ShareState { peers, state, .. }= response else { todo!() };
-                                return Self {
-                                    address,
-                                    sender,
-                                    peers,
-                                    mempool: HashSet::new(),
-                                    state,
-                                    miner: Mine {
-                                        task: tokio::spawn(async {}),
-                                        block_sender: sender_channel,
-                                        block_receiver: receiver_channel,
-                                    }
-                                };
+                            Ok(response) => match response {
+                                Message::ShareState { from, peers, state } => {
+                                    info!("Received State from {}", from);
+                                    return Ok(Self {
+                                        address,
+                                        sender,
+                                        peers,
+                                        mempool: HashSet::new(),
+                                        state,
+                                        miner: Mine {
+                                            task: tokio::spawn(async {}),
+                                            block_sender,
+                                            block_receiver,
+                                        },
+                                    });
+                                }
+                                Message::GetState { .. } | Message::Txn { .. } => {
+                                    return Err(NetworkError::BootNodeReceiveError(node).into());
+                                }
                             },
                             Err(_) => {
-                                warn!("Failed to serialize state message from seed 😔. Try again!")
+                                return Err(NetworkError::BootNodeReceiveError(node).into());
                             }
                         }
                     }
 
                     Err(_) => {
-                        warn!("Failed to serialize message");
+                        return Err(NetworkError::DeserializeError.into());
                     }
                 }
             }
-            None => {}
-        }
-
-        Self {
-            address,
-            sender: MessageSender::new(),
-            peers,
-            mempool: HashSet::new(),
-            state: BlockChain::new(),
-            miner: Mine {
-                task: tokio::spawn(async {}),
-                block_sender: sender_channel,
-                block_receiver: receiver_channel,
-            },
+            None => {
+                return Ok(Self {
+                    address,
+                    sender: MessageSender::new(),
+                    peers,
+                    mempool: HashSet::new(),
+                    state: BlockChain::new(),
+                    miner: Mine {
+                        task: tokio::spawn(async {}),
+                        block_sender,
+                        block_receiver,
+                    },
+                });
+            }
         }
     }
 
@@ -137,7 +260,7 @@ impl Node {
 
         loop {
             tokio::select! {
-                // Receive block from miner task
+                // Receive block from miner thread
                 Some(block) = self.miner.block_receiver.recv() => {
                     info!("Block received from Miner task: {:?}", block);
 
@@ -210,6 +333,7 @@ impl Node {
                             == current_latest_block.block_header.index + 1
                         && current_latest_block.block_header.current_hash
                             == new_block.block_header.previous_hash;
+
                     if new_block_check_passed {
                         self.update_state(state).await;
                     } else {
@@ -262,13 +386,13 @@ impl Node {
     fn run_miner(&mut self) {
         match self.state.blocks.last() {
             Some(block) => {
-                info!("Restarting miner task...");
+                info!("Restarting miner thread...");
                 let block = block.clone();
                 let txns = self.mempool.clone().into_iter().collect();
                 let block_sender = self.miner.block_sender.clone();
 
                 self.miner.task = tokio::spawn(async move {
-                    let new_block = BlockChain::mine(txns, block).await;
+                    let new_block = Mine::mine(txns, block).await;
                     if let Err(e) = block_sender.send(new_block).await {
                         warn!("Can't send mined block to receiver: {}", e);
                     }
@@ -277,10 +401,10 @@ impl Node {
 
             None => {
                 info!("Mining genesis block!");
-                let signal_receiver = self.miner.block_sender.clone();
+                let block_sender = self.miner.block_sender.clone();
                 self.miner.task = tokio::spawn(async move {
-                    let new_block = BlockChain::mine_genesis();
-                    if let Err(e) = signal_receiver.send(new_block).await {
+                    let new_block = Mine::mine_genesis();
+                    if let Err(e) = block_sender.send(new_block).await {
                         warn!("Can't send mined block to receiver: {}", e);
                     }
                 });

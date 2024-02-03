@@ -2,13 +2,10 @@ use crate::block::*;
 use crate::transaction::*;
 
 use anyhow::Result;
-use log::{error, info};
-use rand::{thread_rng, Rng as _};
+use log::error;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
-
-const REWARD: u8 = 50;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockChain {
@@ -29,126 +26,23 @@ impl BlockChain {
             .clone()
     }
 
-    pub fn all_blocks_inlongest_chain(&self) -> Vec<Block> {
+    pub fn all_blocks_in_longest_chain(&self) -> Vec<Block> {
         self.blocks.clone()
     }
 
-    pub async fn mine(txns: Vec<Txn>, previous_block: Block) -> Block {
-        let merkle_root = MerkleRoot::from(txns.clone());
-        let mut block = Block::new(previous_block.block_header.current_hash.clone(), txns);
-        block.block_header.merkle_root = merkle_root;
-        block.block_header.nonce = thread_rng().gen::<u32>();
-
-        let difficulty = block.block_header.difficulty as usize;
-        let target: String = vec!["0"; difficulty].join("").into();
-
-        dbg!(&target);
-        const YIELD_INTERVAL: u32 = 10000;
-        // max iter per session to yield back to the executor who will send abort signal if the current block has been mined.
-        // This will help us rerun miner task with new block and not infinitelt work on mining already mined blocks.
-
-        loop {
-            if block.block_header.nonce % YIELD_INTERVAL == 0 {
-                tokio::task::yield_now().await;
-            }
-
-            let block_hash = Self::hash_block(block.clone());
-
-            let hash_to_bits = block_hash.iter().fold(String::new(), |acc, byte| {
-                let bits = format!("{byte:0>8b}");
-                acc + bits.as_str()
-            });
-
-            if hash_to_bits.starts_with(target.as_str()) {
-                dbg!(hash_to_bits);
-                info!("{}", format!("Mined!⚡️"));
-                block.block_header.coinbase_txn.amount = REWARD;
-                block.block_header.coinbase_txn.validator =
-                    format!("0x{}", thread_rng().gen::<u32>()); // TODO: Node network address should be added
-
-                let mut hasher = Sha256::new();
-                hasher.update(&serde_json::to_string(&block).unwrap().as_bytes());
-
-                let hash = hex::encode(hasher.finalize().as_slice().to_owned());
-
-                block.block_header.current_hash = hash;
-
-                return block;
-            }
-
-            block.block_header.nonce += 1;
-        }
-    }
-
-    pub fn mine_genesis() -> Block {
-        let nonce = thread_rng().gen::<u32>();
-        let block_header = BlockHeader {
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            index: 0,
-            previous_hash: "00000".to_string(),
-            current_hash: String::new(),
-            coinbase_txn: CoinbaseTxn::new(),
-            merkle_root: MerkleRoot::new(),
-            nonce,
-            difficulty: DIFFICULTY,
-        };
-        let body = Body { txn_data: vec![] };
-
-        let mut block = Block { block_header, body };
-
-        let merkle_root = MerkleRoot::from(block.body.txn_data.clone());
-
-        block.block_header.merkle_root = merkle_root;
-
-        let difficulty = block.block_header.difficulty as usize;
-        let target: String = vec!["0"; difficulty].join("").into();
-
-        loop {
-            let block_hash = Self::hash_block(block.clone());
-
-            let hash_to_bits = block_hash.iter().fold(String::new(), |acc, byte| {
-                let bits = format!("{byte:0>8b}");
-                acc + bits.as_str()
-            });
-
-            if hash_to_bits.starts_with(target.as_str()) {
-                info!("{}", format!("Mined genesis!👀🎉"));
-                block.block_header.coinbase_txn.amount = REWARD;
-                block.block_header.coinbase_txn.validator =
-                    format!("0x{}", thread_rng().gen::<u32>());
-
-                let mut hasher = Sha256::new();
-                hasher.update(&serde_json::to_string(&block).unwrap().as_bytes());
-
-                let hash = hex::encode(hasher.finalize().as_slice().to_owned());
-
-                block.block_header.current_hash = hash;
-
-                return block;
-            }
-
-            block.block_header.nonce += 1;
-        }
-    }
-
-    pub fn add_block(&self, new_block: Block) -> Result<Self> {
+    pub fn add_block(&mut self, new_block: Block) -> Result<Self> {
         match self.blocks.last() {
             Some(previous_block) => {
                 if new_block.block_header.previous_hash != previous_block.block_header.current_hash
                 {
                     error!("Block is an invalid extension of the previous blockchain state");
                 }
-                let mut new_chain = self.clone();
-                new_chain.blocks.push(new_block);
-                Ok(new_chain)
+                self.blocks.push(new_block);
+                Ok(self.clone())
             }
             None => {
-                let mut new_chain = self.clone();
-                new_chain.blocks.push(new_block);
-                Ok(new_chain)
+                self.blocks.push(new_block);
+                Ok(self.clone())
             }
         }
     }

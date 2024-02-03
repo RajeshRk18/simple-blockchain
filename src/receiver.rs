@@ -1,5 +1,5 @@
 // Abstract implementation of Receiver end of the channel
-use super::error::NetworkError::*;
+use crate::error::NetworkError::*;
 use anyhow::Result;
 use bytes::Bytes;
 use futures::{stream::SplitSink, SinkExt as _, StreamExt as _};
@@ -10,8 +10,10 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::{mpsc, oneshot},
 };
+
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+/// Request receiver
 pub struct MessageReceiver<Request, Response> {
     address: SocketAddr,
     sender: mpsc::Sender<(Request, oneshot::Sender<Response>)>,
@@ -40,8 +42,8 @@ where
 
     pub async fn run(&self) {
         let listener = TcpListener::bind(self.address).await.unwrap();
-
-        info!("{} listening to {}", self.receiver_type, self.address);
+        
+        info!("{} listening on {}", self.receiver_type, self.address);
 
         loop {
             let (stream, sender) = match listener.accept().await {
@@ -66,8 +68,10 @@ where
             let (mut writer, mut reader) = Framed::new(stream, LengthDelimitedCodec::new()).split();
 
             while let Some(message) = reader.next().await {
+                info!("looping");
                 match message.map_err(|e| FailedToReceive(sender, e)) {
                     Ok(message) => {
+                        info!("Reached here");
                         let msg = message.into();
                         if let Err(e) = Self::dispatch(&mut writer, channel.clone(), msg).await {
                             warn!("Failed to dispatch message {}", e);

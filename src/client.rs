@@ -1,9 +1,10 @@
 mod transaction;
+mod sender;
 
 use anyhow::Result;
 use clap::Parser;
 use log::{info, warn};
-use network::sender::MessageSender;
+use crate::sender::MessageSender;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 

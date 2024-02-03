@@ -1,7 +1,7 @@
 /* Abstract implementation of Sender end of the channel.
 Also includes receiver connection because sender end creates receiver on demand */
 
-use super::error::NetworkError::*;
+use crate::error::NetworkError;
 
 use bytes::Bytes;
 use futures::sink::SinkExt as _;
@@ -12,6 +12,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, *};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+/// Each peer connection is given a separate thread
 #[derive(Clone)]
 pub struct MessageSender {
     connections: HashMap<SocketAddr, Sender<Bytes>>,
@@ -68,25 +69,29 @@ impl ReceiverConnection {
             Self { address, receiver }.run().await;
         });
     }
+
     pub async fn run(&mut self) {
         let (mut writer, mut reader) = match TcpStream::connect(self.address).await {
             Ok(stream) => Framed::new(stream, LengthDelimitedCodec::new()).split(),
             Err(e) => {
-                warn!("{}", FailedToConnect(self.address, e));
+                warn!("{}", NetworkError::FailedToConnect(self.address, e));
+                info!("GONNA EXIT");
                 return;
             }
         };
 
         while let Some(data) = self.receiver.recv().await {
             if let Err(e) = writer.send(data).await {
-                warn!("{}", FailedToSend(self.address, e));
+                warn!("{:#?}", NetworkError::FailedToSend(self.address, e));
             }
         }
+
+        info!("Gonnareceive ACK");
 
         if let Some(Ok(_)) = reader.next().await {
             info!("Received ACK from {}", self.address);
         } else {
-            warn!("{}", NoACKReceipt(self.address))
+            warn!("{}", NetworkError::NoACKReceipt(self.address));
         }
     }
 }

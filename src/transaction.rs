@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::Bytes;
-use network::sender::MessageSender;
+use crate::sender::MessageSender;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

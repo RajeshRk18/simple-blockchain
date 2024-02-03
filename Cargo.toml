@@ -14,7 +14,6 @@ log = "0.4.19"
 rand = "0.8.5"
 serde_json = "1.0.91"
 sha2 = "0.10.6"
-sha256 = "1.1.1"
 simple_logger = "4.1.0"
 tokio = {version="1.28.2", features = ["full"]}
 tokio-util = {version="0.7.8", features=["codec"]}
@@ -24,8 +23,8 @@ anyhow = "1.0.71"
 thiserror = "1.0.40"
 
 [lib]
-name = "network"
-path="src/network/mod.rs"
+name = "blockchain"
+path = "src/lib.rs"
 
 [[bin]]
 name = "client"

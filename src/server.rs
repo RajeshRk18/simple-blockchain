@@ -1,11 +1,7 @@
-mod block;
-mod blockchain;
-mod node;
-mod transaction;
+use blockchain::receiver::MessageReceiver;
+use blockchain::node::Node;
 
 use clap::Parser;
-use network::receiver::MessageReceiver;
-use node::Node;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::task::JoinHandle;
 
@@ -41,12 +37,15 @@ async fn main() {
     let client_address = SocketAddr::new(cli.address, cli.client_port);
     let boot_node = cli.boot_node;
     dbg!(server_address);
-    let (_, network_handle, _) = spawn_tasks(server_address, client_address, boot_node).await;
+    let (server, network_handle, client) =
+        init_node(server_address, client_address, boot_node).await;
 
+    server.await.unwrap();
     network_handle.await.unwrap();
+    client.await.unwrap();
 }
 
-async fn spawn_tasks(
+async fn init_node(
     server: SocketAddr,
     client: SocketAddr,
     boot_node: Option<SocketAddr>,
@@ -61,7 +60,7 @@ async fn spawn_tasks(
         client_config.run().await;
     });
 
-    let mut node = Node::new(server, boot_node).await;
+    let mut node = Node::new(server, boot_node).await.unwrap();
     let node_handle = tokio::spawn(async move {
         node.run(server_request_handle, client_request_handle).await;
     });

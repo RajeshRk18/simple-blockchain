@@ -18,4 +18,10 @@ pub enum NetworkError {
 
     #[error("Received unexpected ACK from {0}.")]
     UnexpectedACK(SocketAddr),
+
+    #[error("Failed to receive state from boot node {0}")]
+    BootNodeReceiveError(SocketAddr),
+
+    #[error("Failed to deserialize message")]
+    DeserializeError,
 }
