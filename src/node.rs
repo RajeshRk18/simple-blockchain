@@ -3,7 +3,7 @@ use crate::blockchain::BlockChain;
 use crate::transaction::{CoinbaseTxn, Txn};
 use crate::sender::MessageSender;
 use anyhow::{bail, Result};
-use log::{info, warn};
+use log::{info, warn, debug};
 use crate::error::NetworkError;
 use rand::{thread_rng, Rng as _};
 use serde::*;
@@ -42,7 +42,7 @@ impl Mine {
         let difficulty = block.block_header.difficulty as usize;
         let target: String = vec!["0"; difficulty].join("").into();
 
-        dbg!(&target);
+        debug!(&target);
 
         const YIELD_INTERVAL: u32 = 10000;
         // max iter per session to yield back to the executor who will send abort signal if the current block has been mined.

@@ -1,8 +1,6 @@
 /* Abstract implementation of Sender end of the channel.
 Also includes receiver connection because sender end creates receiver on demand */
 
-use crate::error::NetworkError;
-
 use bytes::Bytes;
 use futures::sink::SinkExt as _;
 use futures::stream::StreamExt as _;
@@ -11,6 +9,32 @@ use std::{collections::HashMap, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, *};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum NetworkError {
+    #[error("Failed to connect to {0}\n{1}")]
+    FailedToConnect(SocketAddr, std::io::Error),
+
+    #[error("Failed to send message to {0}.\n{1}")]
+    FailedToSend(SocketAddr, std::io::Error),
+
+    #[error("Failed to receive message from {0}")]
+    FailedToReceive(SocketAddr, std::io::Error),
+
+    #[error("Failed to receive ACK from {0}.")]
+    NoACKReceipt(SocketAddr),
+
+    #[error("Received unexpected ACK from {0}.")]
+    UnexpectedACK(SocketAddr),
+
+    #[error("Failed to receive state from boot node {0}")]
+    BootNodeReceiveError(SocketAddr),
+
+    #[error("Failed to deserialize message")]
+    DeserializeError,
+}
 
 /// Each peer connection is given a separate thread
 #[derive(Clone)]
@@ -41,12 +65,15 @@ impl MessageSender {
         if let Some(sender) = self.connections.get(&addr) {
             if let Err(_) = sender.send(data.clone()).await {
                 warn!("Failed to send message to {}", addr);
+                return;
             }
         } else {
             let sender = Self::spawn_sender(addr);
+            self.connections.insert(addr, sender.clone());
+
             if let Err(_) = sender.send(data.clone()).await {
                 warn!("Failed to send message to {}", addr);
-                self.connections.insert(addr, sender);
+                return;
             }
         }
     }
@@ -75,23 +102,27 @@ impl ReceiverConnection {
             Ok(stream) => Framed::new(stream, LengthDelimitedCodec::new()).split(),
             Err(e) => {
                 warn!("{}", NetworkError::FailedToConnect(self.address, e));
-                info!("GONNA EXIT");
                 return;
             }
         };
 
-        while let Some(data) = self.receiver.recv().await {
-            if let Err(e) = writer.send(data).await {
-                warn!("{:#?}", NetworkError::FailedToSend(self.address, e));
+        loop {
+            tokio::select! {
+                Some(data) = self.receiver.recv() => {
+                    if let Err(e) = writer.send(data).await {
+                        warn!("{:#?}", NetworkError::FailedToSend(self.address, e));
+                    }
+                }
+    
+                Some(response) = reader.next() => {
+                    match response {
+                        Ok(_) => info!("Received ACK from {}", self.address),
+                        Err(e) => { 
+                            warn!("{}", NetworkError::NoACKReceipt(self.address));
+                        }
+                    }
+                }
             }
-        }
-
-        info!("Gonnareceive ACK");
-
-        if let Some(Ok(_)) = reader.next().await {
-            info!("Received ACK from {}", self.address);
-        } else {
-            warn!("{}", NetworkError::NoACKReceipt(self.address));
         }
     }
 }
